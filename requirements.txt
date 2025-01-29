@@ -4,3 +4,4 @@ numpy
 pyvista
 stpyvista
 vtk
+panel
