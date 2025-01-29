@@ -3,3 +3,4 @@ cadquery
 numpy
 pyvista
 stpyvista
+vtk

@@ -1,4 +1,6 @@
 libgl1-mesa-glx
 libxrender1
+libxext6
+libxrender-dev
+libsm6
 xvfb
-python3-vtk9
