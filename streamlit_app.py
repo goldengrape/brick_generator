@@ -6,7 +6,12 @@ import os
 import pyvista as pv
 from stpyvista import stpyvista
 import json
+from stpyvista.utils import start_xvfb
 
+if "IS_XVFB_RUNNING" not in st.session_state:
+  start_xvfb()
+  st.session_state.IS_XVFB_RUNNING = True 
+  
 # ------------- i18n加载 -------------
 with open("i18n_strings.json", "r", encoding="utf-8") as f:
     I18N_STRINGS = json.load(f)
