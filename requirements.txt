@@ -4,4 +4,4 @@ numpy
 pyvista==0.39.1
 panel==0.14.4
 stpyvista
-vtk==9.2.6
+vtk
