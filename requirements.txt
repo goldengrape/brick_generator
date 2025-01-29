@@ -1,7 +1,7 @@
 streamlit
 cadquery
 numpy
-pyvista
-stpyvista
-vtk
-panel
+pyvista==0.39.1
+panel==0.14.4
+stpyvista==0.4.2
+vtk==9.2.6
