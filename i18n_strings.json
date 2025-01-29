@@ -1,0 +1,31 @@
+{
+    "en": {
+      "app_title": "Brick Generator",
+      "sidebar_language": "Language",
+      "sidebar_length": "length (units: studs)",
+      "sidebar_width": "width (units: studs)",
+      "sidebar_height": "height (1=plate, 3=brick)",
+      "sidebar_studs": "studs?",
+      "studs_yes": "yes",
+      "studs_no": "no",
+      "sidebar_tolerance": "tolerance (mm)",
+      "btn_generate": "Generate",
+      "download_stl": "Download STL",
+      "download_step": "Download STEP"
+    },
+    "zh": {
+      "app_title": "砖块生成器",
+      "sidebar_language": "选择语言",
+      "sidebar_length": "长度（单位：粒）",
+      "sidebar_width": "宽度（单位：粒）",
+      "sidebar_height": "高度（1=单片，3=标准砖）",
+      "sidebar_studs": "顶部圆柱？",
+      "studs_yes": "需要",
+      "studs_no": "不需要",
+      "sidebar_tolerance": "公差（mm）",
+      "btn_generate": "生成",
+      "download_stl": "下载 STL 文件",
+      "download_step": "下载 STEP 文件"
+    }
+  }
+  

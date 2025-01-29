@@ -5,26 +5,40 @@ import tempfile
 import os
 import pyvista as pv
 from stpyvista import stpyvista
+import json
 
-# L_brick常用尺寸
-UNIT_LENGTH = 8.0         # 每粒L_brick在 X/Y 上的长度
-PLATE_HEIGHT = 3.2        # 1 plate 高度
-ROOF_THICKNESS = 1.0      # 顶部保留的厚度
-WALL_THICKNESS = 1.5      # 侧壁厚度
-STUD_DIAMETER = 4.8       # 突起圆柱直径
-STUD_HEIGHT = 1.8         # 突起圆柱高度
-UNDERTUBE_OUTER_DIAM = 6.41  # 底部管外径
-UNDERTUBE_INNER_DIAM = 4.8   # 底部管内径
-PLAY = 0.2                # 公差/装配间隙
+# ------------- i18n加载 -------------
+with open("i18n_strings.json", "r", encoding="utf-8") as f:
+    I18N_STRINGS = json.load(f)
+
+
+def _(key: str) -> str:
+    """
+    根据当前语言 lang 返回对应的翻译文案.
+    如果对应语言里没有, 则回退到英文.
+    """
+    lang = st.session_state.get("selected_lang", "en")
+    return I18N_STRINGS.get(lang, I18N_STRINGS["en"]).get(key, key)
+
+
+# ------------- 几何参数 -------------
+UNIT_LENGTH = 8.0
+PLATE_HEIGHT = 3.2
+ROOF_THICKNESS = 1.0
+WALL_THICKNESS = 1.5
+STUD_DIAMETER = 4.8
+STUD_HEIGHT = 1.8
+UNDERTUBE_OUTER_DIAM = 6.41
+UNDERTUBE_INNER_DIAM = 4.8
+PLAY = 0.2
 
 def build_brick(
-    brick_length=3,  # 砖块长度(以L_brick粒为单位)
-    brick_width=2,   # 砖块宽度
-    brick_height=3,  # 砖块高度(3=标准砖, 1=单片plate)
-    with_studs=True, # 是否需要顶部圆柱
-    tolerance=0.0    # 在尺寸上额外加减的公差
+    brick_length=3,
+    brick_width=2,
+    brick_height=3,
+    with_studs=True,
+    tolerance=0.0
 ):
-    # --- 1) 外部完整实体 ---
     outer_length = brick_length * UNIT_LENGTH
     outer_width  = brick_width  * UNIT_LENGTH
     outer_height = brick_height * PLATE_HEIGHT
@@ -32,10 +46,9 @@ def build_brick(
     base = (
         cq.Workplane("XY")
         .box(outer_length, outer_width, outer_height)
-        .translate((0,0,outer_height/2))
+        .translate((0, 0, outer_height/2))
     )
 
-    # --- 2) 挖出内部空间，但保留顶部 ROOF_THICKNESS 厚度 ---
     cavity_length = outer_length - 2*WALL_THICKNESS - PLAY + 2*tolerance
     cavity_width  = outer_width  - 2*WALL_THICKNESS - PLAY + 2*tolerance
     cavity_height = outer_height - ROOF_THICKNESS
@@ -50,7 +63,6 @@ def build_brick(
 
     base = base.cut(inner_cavity).translate(((-shift_x, -shift_y, 0)))
 
-    # --- 3) 顶部圆柱 studs ---
     studs = None
     if with_studs:
         stud_cyl = cq.Workplane("XY")
@@ -66,7 +78,6 @@ def build_brick(
                 )
         studs = stud_cyl.translate((0, 0, outer_height))
 
-    # --- 4) 底部管状 hollow under-tubes(可选) ---
     under_tubes = None
     if brick_length > 1 and brick_width > 1:
         tube_height = outer_height - ROOF_THICKNESS + 0.01
@@ -94,99 +105,152 @@ def build_brick(
         )
         under_tubes = tube_cyl.cut(inner_cyl)
 
-    # --- 5) 合并所有几何体 ---
     brick = base
     if studs:
         brick = brick.union(studs)
     if under_tubes:
         brick = brick.union(under_tubes)
 
-    # --- 6) 平移, 让砖块居中到原点 (可选) ---
     brick = brick.translate((shift_x, shift_y, 0))
     return brick
 
 
 def main():
-    st.title("Brick Generator")
+    st.title( _("app_title") )
 
-    # 确保 session_state 中有一个计数器 count
+    # 确保 session_state 有初始数据
+    if "selected_lang" not in st.session_state:
+        st.session_state["selected_lang"] = "en"
+    if "brick_params" not in st.session_state:
+        # 存储上一次生成的参数(长度/宽度/高度/公差/是否带studs等)
+        st.session_state["brick_params"] = {
+            "brick_length": 3,
+            "brick_width": 2,
+            "brick_height": 3,
+            "with_studs": True,
+            "tolerance": 0.0
+        }
+    if "brick_model" not in st.session_state:
+        # 存储生成后的模型(或可只存参数, 动态生成)
+        st.session_state["brick_model"] = None
     if "generate_count" not in st.session_state:
         st.session_state["generate_count"] = 0
 
-    # 用 Streamlit 表单收集参数
+    # ------------- 侧边栏 -------------
+    # 1) 语言切换(不在表单中, 这样切换语言时不需要点Generate)
+    selected_lang = st.sidebar.selectbox(
+        label=_("sidebar_language"),
+        options=["en", "zh"],
+        format_func=lambda x: "English" if x == "en" else "中文",
+        key="selected_lang",  # 直接和 session_state["selected_lang"] 绑定
+    )
+
+    # 2) 参数表单
     with st.sidebar.form("param_form"):
-        brick_length = st.slider("length (units: studs)", 1, 48, 3)
-        brick_width = st.slider("width (units: studs)", 1, 48, 2)
-        brick_height = st.slider("height (1=plate, 3=brick)", 1, 10, 3)
-        with_studs_opt = st.selectbox("studs？", ["yes", "no"], index=0)
-        tolerance = st.number_input("tolerance (mm)", value=0.0, step=0.01)
+        # 默认从 session_state["brick_params"] 里取当前值
+        current_params = st.session_state["brick_params"]
 
-        generate_button = st.form_submit_button(label="Generate")
+        length_val = st.slider(
+            label=_("sidebar_length"),
+            min_value=1, max_value=48,
+            value=current_params["brick_length"],
+        )
+        width_val = st.slider(
+            label=_("sidebar_width"),
+            min_value=1, max_value=48,
+            value=current_params["brick_width"],
+        )
+        height_val = st.slider(
+            label=_("sidebar_height"),
+            min_value=1, max_value=10,
+            value=current_params["brick_height"],
+        )
 
-    # 如果表单未提交就先停止，让用户先点“Generate”
-    if not generate_button:
-        st.stop()
+        studs_opt = st.selectbox(
+            label=_("sidebar_studs"),
+            options=[ _("studs_yes"), _("studs_no") ],
+            index=(0 if current_params["with_studs"] else 1)
+        )
+        # 映射回 True/False
+        with_studs_val = (studs_opt == _("studs_yes"))
 
-    # 用户点击了 Generate，计数器加 1
-    st.session_state["generate_count"] += 1
+        tol_val = st.number_input(
+            label=_("sidebar_tolerance"),
+            value=current_params["tolerance"],
+            step=0.01
+        )
 
-    with_studs = (with_studs_opt == "yes")
+        generate_button = st.form_submit_button( label=_("btn_generate") )
 
-    # 生成 3D 模型
-    brick_model = build_brick(
-        brick_length=brick_length,
-        brick_width=brick_width,
-        brick_height=brick_height,
-        with_studs=with_studs,
-        tolerance=tolerance
-    )
+    # ------------- 点击 Generate 时 -------------
+    if generate_button:
+        # 更新 session_state["brick_params"]
+        st.session_state["brick_params"] = {
+            "brick_length": length_val,
+            "brick_width": width_val,
+            "brick_height": height_val,
+            "with_studs": with_studs_val,
+            "tolerance": tol_val
+        }
 
-    # 把 CadQuery 结果导出为临时 STL，再用 PyVista 读取
-    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp_stl:
-        tmp_stl_path = tmp_stl.name
-    exporters.export(brick_model, tmp_stl_path, exporters.ExportTypes.STL)
-    mesh = pv.read(tmp_stl_path)
-    os.remove(tmp_stl_path)
+        # 生成新模型
+        new_model = build_brick(
+            brick_length=length_val,
+            brick_width=width_val,
+            brick_height=height_val,
+            with_studs=with_studs_val,
+            tolerance=tol_val
+        )
+        st.session_state["brick_model"] = new_model
+        st.session_state["generate_count"] += 1  # 强制 stpyvista 重绘
 
-    # ---------------------------
-    # 可交互的 3D 展示 (stpyvista)
-    # 这里的 key 拼上 generate_count，保证每次都强制重新加载
-    # ---------------------------
-    plotter = pv.Plotter(window_size=(600, 500))  
-    plotter.add_mesh(mesh, color="orange", show_edges=False)
-    plotter.view_isometric()
-    stpyvista(plotter, key=f"interactive_brick_{st.session_state['generate_count']}")
+    # ------------- 在主区域显示 3D -------------
+    if st.session_state["brick_model"] is None:
+        st.info( _("no_model") )
+    else:
+        # 导出 STL -> PyVista
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp_stl:
+            tmp_stl_path = tmp_stl.name
+        exporters.export(st.session_state["brick_model"], tmp_stl_path, exporters.ExportTypes.STL)
+        mesh = pv.read(tmp_stl_path)
+        os.remove(tmp_stl_path)
 
-    # ---------------------------
-    # 文件下载
-    # ---------------------------
-    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp_stl:
-        tmp_stl_path = tmp_stl.name
-    exporters.export(brick_model, tmp_stl_path, exporters.ExportTypes.STL)
-    with open(tmp_stl_path, "rb") as f:
-        stl_data = f.read()
-    os.remove(tmp_stl_path)
+        # 绘制可交互 3D
+        plotter = pv.Plotter(window_size=(600, 500))
+        plotter.add_mesh(mesh, color="orange", show_edges=False)
+        plotter.view_isometric()
 
-    st.download_button(
-        label="下载 STL 文件",
-        data=stl_data,
-        file_name="brick_brick.stl",
-        mime="application/vnd.ms-pki.stl"
-    )
+        stpyvista(plotter, key=f"interactive_brick_{st.session_state['generate_count']}")
 
-    with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as tmp_step:
-        tmp_step_path = tmp_step.name
-    exporters.export(brick_model, tmp_step_path, exporters.ExportTypes.STEP)
-    with open(tmp_step_path, "rb") as f:
-        step_data = f.read()
-    os.remove(tmp_step_path)
+        # 下载 STL
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp_stl:
+            tmp_stl_path = tmp_stl.name
+        exporters.export(st.session_state["brick_model"], tmp_stl_path, exporters.ExportTypes.STL)
+        with open(tmp_stl_path, "rb") as f:
+            stl_data = f.read()
+        os.remove(tmp_stl_path)
 
-    st.download_button(
-        label="下载 STEP 文件",
-        data=step_data,
-        file_name="brick_brick.step",
-        mime="application/x-step"
-    )
+        st.download_button(
+            label=_("download_stl"),
+            data=stl_data,
+            file_name="brick_brick.stl",
+            mime="application/vnd.ms-pki.stl"
+        )
+
+        # 下载 STEP
+        with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as tmp_step:
+            tmp_step_path = tmp_step.name
+        exporters.export(st.session_state["brick_model"], tmp_step_path, exporters.ExportTypes.STEP)
+        with open(tmp_step_path, "rb") as f:
+            step_data = f.read()
+        os.remove(tmp_step_path)
+
+        st.download_button(
+            label=_("download_step"),
+            data=step_data,
+            file_name="brick_brick.step",
+            mime="application/x-step"
+        )
 
 
 if __name__ == "__main__":
