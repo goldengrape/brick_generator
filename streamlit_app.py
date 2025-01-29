@@ -6,10 +6,6 @@ import os
 import pyvista as pv
 from stpyvista import stpyvista
 
-
-# 这里是关键，使用 st_pv 进行可交互显示
-# from pyvista_streamlit import st_pv
-
 # L_brick常用尺寸
 UNIT_LENGTH = 8.0         # 每粒L_brick在 X/Y 上的长度
 PLATE_HEIGHT = 3.2        # 1 plate 高度
@@ -44,14 +40,13 @@ def build_brick(
     cavity_width  = outer_width  - 2*WALL_THICKNESS - PLAY + 2*tolerance
     cavity_height = outer_height - ROOF_THICKNESS
 
-    # 内部盒
     inner_cavity = (
         cq.Workplane("XY")
         .translate((WALL_THICKNESS, WALL_THICKNESS, 0))
         .box(cavity_length, cavity_width, cavity_height)
     )
-    shift_x = -outer_length/2.0
-    shift_y = -outer_width /2.0
+    shift_x = -outer_length / 2.0
+    shift_y = -outer_width  / 2.0
 
     base = base.cut(inner_cavity).translate(((-shift_x, -shift_y, 0)))
 
@@ -61,8 +56,8 @@ def build_brick(
         stud_cyl = cq.Workplane("XY")
         for x in range(brick_length):
             for y in range(brick_width):
-                center_x = (x+0.5)*UNIT_LENGTH
-                center_y = (y+0.5)*UNIT_LENGTH
+                center_x = (x + 0.5) * UNIT_LENGTH
+                center_y = (y + 0.5) * UNIT_LENGTH
                 stud_cyl = (
                     stud_cyl
                     .pushPoints([(center_x, center_y)])
@@ -79,7 +74,7 @@ def build_brick(
         inner_rad = (UNDERTUBE_INNER_DIAM + 2*tolerance) / 2.0
 
         ring_positions = [
-            (x*UNIT_LENGTH, y*UNIT_LENGTH)
+            (x * UNIT_LENGTH, y * UNIT_LENGTH)
             for x in range(1, brick_length)
             for y in range(1, brick_width)
         ]
@@ -110,16 +105,32 @@ def build_brick(
     brick = brick.translate((shift_x, shift_y, 0))
     return brick
 
+
 def main():
     st.title("Brick Generator")
 
-    # 侧边栏/参数设置
-    brick_length = st.sidebar.slider("length (units: studs)", 1, 48, 3)
-    brick_width = st.sidebar.slider("width (units: studs)", 1, 48, 2)
-    brick_height = st.sidebar.slider("height (1=plate, 3=brick)", 1, 10, 3)
-    with_studs_opt = st.sidebar.selectbox("studs？", ["yes", "no"], index=0)
+    # 确保 session_state 中有一个计数器 count
+    if "generate_count" not in st.session_state:
+        st.session_state["generate_count"] = 0
+
+    # 用 Streamlit 表单收集参数
+    with st.sidebar.form("param_form"):
+        brick_length = st.slider("length (units: studs)", 1, 48, 3)
+        brick_width = st.slider("width (units: studs)", 1, 48, 2)
+        brick_height = st.slider("height (1=plate, 3=brick)", 1, 10, 3)
+        with_studs_opt = st.selectbox("studs？", ["yes", "no"], index=0)
+        tolerance = st.number_input("tolerance (mm)", value=0.0, step=0.01)
+
+        generate_button = st.form_submit_button(label="Generate")
+
+    # 如果表单未提交就先停止，让用户先点“Generate”
+    if not generate_button:
+        st.stop()
+
+    # 用户点击了 Generate，计数器加 1
+    st.session_state["generate_count"] += 1
+
     with_studs = (with_studs_opt == "yes")
-    tolerance = st.sidebar.number_input("tolerance (mm)", value=0.0, step=0.01)
 
     # 生成 3D 模型
     brick_model = build_brick(
@@ -133,28 +144,22 @@ def main():
     # 把 CadQuery 结果导出为临时 STL，再用 PyVista 读取
     with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp_stl:
         tmp_stl_path = tmp_stl.name
-
     exporters.export(brick_model, tmp_stl_path, exporters.ExportTypes.STL)
     mesh = pv.read(tmp_stl_path)
     os.remove(tmp_stl_path)
 
     # ---------------------------
-    # **可交互的 3D 展示** 
-    # 使用 pyvista-streamlit 嵌入到页面
+    # 可交互的 3D 展示 (stpyvista)
+    # 这里的 key 拼上 generate_count，保证每次都强制重新加载
     # ---------------------------
-    plotter = pv.Plotter(window_size=(600, 500))  # off_screen=False (默认)
-    plotter.add_mesh(mesh, color="lightblue", show_edges=False)
-    # plotter.show_bounds(grid='front', location='outer', color='black')
+    plotter = pv.Plotter(window_size=(600, 500))  
+    plotter.add_mesh(mesh, color="orange", show_edges=False)
     plotter.view_isometric()
-
-    # st_pv(plotter, key="interactive_brick")
-    stpyvista(plotter, key="interactive_brick")
-
+    stpyvista(plotter, key=f"interactive_brick_{st.session_state['generate_count']}")
 
     # ---------------------------
-    # 下面保留文件下载部分
+    # 文件下载
     # ---------------------------
-    # 导出 STL 文件并提供下载
     with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp_stl:
         tmp_stl_path = tmp_stl.name
     exporters.export(brick_model, tmp_stl_path, exporters.ExportTypes.STL)
@@ -169,7 +174,6 @@ def main():
         mime="application/vnd.ms-pki.stl"
     )
 
-    # 导出 STEP 文件并提供下载
     with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as tmp_step:
         tmp_step_path = tmp_step.name
     exporters.export(brick_model, tmp_step_path, exporters.ExportTypes.STEP)
@@ -183,6 +187,7 @@ def main():
         file_name="brick_brick.step",
         mime="application/x-step"
     )
+
 
 if __name__ == "__main__":
     main()
