@@ -5,3 +5,5 @@ stpyvista
 cadquery
 numpy
 panel
+pythonocc-core
+

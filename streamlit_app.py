@@ -31,7 +31,7 @@ UNIT_LENGTH = 8.0
 PLATE_HEIGHT = 3.2
 ROOF_THICKNESS = 1.0
 WALL_THICKNESS = 1.5
-STUD_DIAMETER = 4.8+0.1
+STUD_DIAMETER = 4.8
 STUD_HEIGHT = 1.8
 UNDERTUBE_OUTER_DIAM = 6.41
 UNDERTUBE_INNER_DIAM = 4.8
@@ -133,7 +133,7 @@ def main():
             "brick_width": 2,
             "brick_height": 3,
             "with_studs": True,
-            "tolerance": 0.0
+            "tolerance": -0.1
         }
     if "brick_model" not in st.session_state:
         # 存储生成后的模型(或可只存参数, 动态生成)
